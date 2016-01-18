@@ -3,6 +3,7 @@
 #include <fstream>
 #include <algorithm>
 #include <sstream>
+#include <memory>
 
 #include <boost/interprocess/file_mapping.hpp>
 #include <boost/interprocess/mapped_region.hpp>
@@ -19,8 +20,14 @@ static constexpr auto
         *tsanlog_ef = tsanlog_sig_e,
         *tsanlog_el = tsanlog_sig_e + sizeof(tsanlog_sig_e) - 1;
 
+typedef unique_ptr<FILE, decltype(ptr_fun(fclose))> auto_fp;
+
+auto_fp auto_fopen(const char* name, const char* mode){
+    return auto_fp(fopen(name, mode), ptr_fun(fclose));
+};
+
 void split(const char* log, size_t s, const char* prefix){
-    map<int, ofstream> outs;
+    map<int, auto_fp> outs;
     const char *i = log, *j = log + s, *k;
     while((k = search(i, j, tsanlog_bf, tsanlog_bl)) != j){
         fwrite(i, sizeof(char), k-i, stdout);
@@ -37,9 +44,9 @@ void split(const char* log, size_t s, const char* prefix){
         if(outs.find(tid) == outs.end()){
             stringstream name;
             name << prefix << "_" << tid << ".log";
-            outs.insert(decltype(outs)::value_type(tid, ofstream(name.str().c_str())));
+            outs.insert(make_pair(tid, auto_fopen(name.str().c_str(), "w")));
         }
-        outs[tid].write(k - len, len);
+        fwrite(k-len, sizeof(char), len, outs[tid].get());
     }
     fwrite(i, sizeof(char), j - i, stdout);
 }
